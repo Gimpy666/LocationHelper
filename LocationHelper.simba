@@ -1,0 +1,132 @@
+{$DEFINE SCRIPT_REVISION := '1'}
+program LocationHelper;
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+{------------------------------------------------------------------------
+LocationHelper by Gimpy666
+
+This script will tell you the coordinate that your player is currently on
+and it will also allow you to specify which tile to highlight on the main
+screen while the script is running so you can test multiple coordinates /
+tiles without restarting or modifying the script
+
+Tested with:
+o RuneLite x64
+o Simba r1400 x64
+o SRL-T 7.20.3
+o WaspLib 20.2.3
+
+Instructions:
+o Change the REGION const variable to the chunks that you will be using
+  this script for
+o When running the script, in the chat text box, type in a message and
+  the simba console will write text like "my message : [5588,29710]"
+  which will show your players coordinates every 2 - 3 seconds
+o If you want to highlight a tile on the screen, type in a coordiante
+  in the chat text box like X,Y or 123,456 and then click the clan chat
+  tab to tell the script that you want to highlight that tile
+------------------------------------------------------------------------}
+
+// define global constant, immutable variables
+const
+  // define chunks, sourced from map.waspscripts.com
+  // [[Chunk1(x,y),Chunk2(x,y)], [Plane]]
+  REGION:  TRSMapChunk = [[36, 81, 39, 78], [0]];
+
+// stolen function from BigAussie who stole it from Torwent
+function TRSChat.GetPlayerMessage(Line: Int32; Colors: TIntegerArray = CHAT_MESSAGE_COLORS): String;
+const
+  StaticOffset = 0;
+var
+  B: TBox;
+  X: Int32;
+  Transparent: Boolean;
+  Matrix: T2DIntegerArray;
+  colonPos: Integer;
+  tempResult: String;
+begin
+  b := Self.LineBoxes[line];
+  B.Y1 -= StaticOffset;
+
+  Transparent := Self.IsTransparent();
+  if Transparent then
+    Colors.Remove(CHAT_COLOR_BLACK, True);
+
+  if (Length(Colors) > 0) then
+  begin
+    Matrix := GetColorsMatrix(B.X1, B.Y1, B.X2, B.Y2);
+
+    if Transparent then
+      for X := 0 to High(Matrix[StaticOffset]) do
+        if (Matrix[StaticOffset][X] = CHAT_COLOR_BLACK) theN
+          Matrix[StaticOffset][X] := Colors[0];
+
+    tempResult := OCR._RecognizeStatic(Matrix, TOCRColorFilter.Create(Colors), RS_FONT_PLAIN_12);
+    colonPos := Pos(': ', tempResult);
+    if colonPos > 0 then
+    begin
+      Result := Copy(tempResult, colonPos + 2, Length(tempResult) - colonPos - 1);
+      if Result = '*' then
+        Result := '';
+    end
+    else
+    begin
+      Result := tempResult;
+    end;
+  end;
+end;
+
+// highlight tile if clan chat tab is active. need to have text like 5588,29710
+procedure HighlightTile();
+var
+  // define our variables
+  // TRectangle is a combination of 2 coordinates for opposite corners of a rectangle
+  TileTRectangle: TRectangle;
+  // TPoint is a single coordinate
+  TileTPoint: TPoint;
+begin
+  // try will allow us to catch any errors since user input is used here
+  try
+    // assign the X and Y coordinates to the TileTPoint variable from the chat text box
+    TileTPoint.X := StrToInt(Chat.GetPlayerMessage(8).Replace('*','').Before(','));
+    TileTPoint.Y := StrToInt(Chat.GetPlayerMessage(8).Replace('*','').After(','));
+  except
+    // if there is an error (the player input isn't formatted correctly) catch it and log it
+    WriteLn('Error Drawing Tile: Make sure you use the coordinate format of X,Y or 123,123');
+    WriteLn('');
+    // exit this procedure so following code doesn't run since there was an error
+    Exit;
+  end;
+  // provide the coordinate to Map.GetTileMs() which will return a TRectangle for the main screen
+  TileTRectangle := Map.GetTileMs(TileTPoint);
+  WriteLn('Drawing Tile ' + TileTPoint.ToString);
+  // clear the main screen of any previous drawings
+  RSClient.Image.Clear(Mainscreen.Bounds);
+  // draw the TRectangle on the main screen which will highlight the tile
+  RSClient.Image.DrawRect(TileTRectangle, clAqua);
+end;
+
+// script starting point; this is where the script first executes
+begin
+  // setup chunk
+  Map.SetupChunk(REGION,8);
+
+  // infinite loop so the script runs forever
+  while True do
+  begin
+    // while the chat box isn't empty, start a loop
+    while Chat.GetPlayerMessage(8) <> '' do
+    begin
+
+      // check if clan chat tab is open so we can enable tile highlight based on the coordinates in the text box
+      if ChatButtons.IsActive(ERSChatButton.CLAN_CHAT) then
+        HighlightTile();
+
+      // write the contents of the chat box to the console with the coordinates
+      WriteLn(Chat.GetPlayerMessage(8).Replace('*','') + ' : ' + Map.Position.ToString);
+      WriteLn('');
+      // wait a bit so the console isn't spammed
+      Wait(2000,3000);
+    end;
+  end;
+end.
